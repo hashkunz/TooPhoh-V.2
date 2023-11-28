@@ -7,7 +7,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-#define DHTPIN 4     // Digital pin connected to the DHT sensor
+#define DHTPIN 13     // Digital pin connected to the DHT sensor
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -33,12 +33,14 @@ int count =0;
 bool set = false;
 
 int relay1_pin = 15;
-int relay2_pin = 2;
+int relay2_pin = 16;
+int relay3_pin = 17;
 
 void setup() {
   Serial.begin(115200);
   pinMode(relay1_pin, OUTPUT);
   pinMode(relay2_pin, OUTPUT);
+  pinMode(relay3_pin, OUTPUT);
   // initialize the LCD
   lcd.begin();
 
@@ -67,10 +69,11 @@ void setup() {
 
 void loop() {
   timeClient.update();
+  Serial.println("\n=============================================\n");
   Serial.print(F("Count : "));
   Serial.println(count);
     if(count > 9){
-      count =0 ;
+      count = 0;
       set = true;
     }
   hour = timeClient.getHours();
@@ -78,14 +81,12 @@ void loop() {
   second = timeClient.getSeconds();
   Serial.println(F("Time Begin : "));
   Serial.println(timeClient.getFormattedTime());
-
-  lcd.clear();
   // Wait a few seconds between measurements.
   sensorRead();
 }
 
 void sensorRead() {
-  delay(2000);
+  delay(1000);
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   if (isnan(h) || isnan(t)) {
@@ -100,6 +101,7 @@ void sensorRead() {
   Serial.print(F(" C \n"));
 
   // =============================================================
+
   delay(2000);
   float shtHum[5];
   float avgShthum = 0, sum = 0;
@@ -133,52 +135,91 @@ void sensorRead() {
   Serial.print(avgShthum);
   Serial.print(" % ");
   Serial.println();
+  lcd.clear();
 
-  lcd.setCursor(0, 0); // แถวที่ 1
-  lcd.print("HumdOut = ");
-  lcd.setCursor(12, 0); // แถวที่ 1
+  lcd.setCursor(2, 0); // แถวที่ 1
+  lcd.print("HumiOut  :  ");
+  // lcd.setCursor(10, 0); // แถวที่ 1
   lcd.print(h);
+  lcd.print(" %");
 
-  lcd.setCursor(0, 1); // แถวที่ 2
-  lcd.print("TempOut = ");
-  lcd.setCursor(12, 1); // แถวที่ 2
+  lcd.setCursor(2, 1); // แถวที่ 2
+  lcd.print("TempOut  :  ");
+  // lcd.setCursor(10, 1); // แถวที่ 2
   lcd.print(t);
+  lcd.print(" °C");
 
-  lcd.setCursor(0, 2); // แถวที่ 3
-  lcd.print("HumdIn = ");
-  lcd.setCursor(12, 2); // แถวที่ 3
+  lcd.setCursor(2, 2); // แถวที่ 3
+  lcd.print("HumiIn  :  ");
+  // lcd.setCursor(10, 2); // แถวที่ 3
   lcd.print(humd);
+  lcd.print(" %");
 
-  lcd.setCursor(0, 3); // แถวที่ 4
-  lcd.print("TempIn = ");
-  lcd.setCursor(12, 3); // แถวที่ 4
+  lcd.setCursor(2, 3); // แถวที่ 4
+  lcd.print("TempIn  :  ");
+  // lcd.setCursor(10, 3); // แถวที่ 4
   lcd.print(temp);
+  lcd.print(" °C");
 
-  checkHumd(avgShthum);
+  checkHumd(avgShthum, temp);
+  delay(1000);
   sendThing(h, t, avgShthum, temp);
 }
 
-void checkHumd(float avgShthum){
+void checkHumd(float avgShthum, float temp){
   int cHour = timeClient.getHours();
   Serial.print("\nCheckHourNow = ");
   Serial.print(cHour);
   Serial.print("\n");
+  //relay channel 2
   if (cHour >= 6 && cHour < 22) {
-    digitalWrite(relay2_pin, HIGH);
-    Serial.println("Fog On.....");
-  } else {
     digitalWrite(relay2_pin, LOW);
-    Serial.println("Fog Off.....");
-  }
-
-  if (avgShthum < 80.00) {
-    digitalWrite(relay1_pin, HIGH);
-    Serial.println("Pump On.....");
+    Serial.println("LED On.....");
+    Serial.print("\nCheck Temp Now = ");
+    Serial.print(temp);
+    //relay channel 3
+      if (temp > 23.00) {
+        digitalWrite(relay3_pin, LOW);
+        Serial.println("\nSun_Electric On.....");
+      } else if (temp <= 17.00) {
+        digitalWrite(relay3_pin, HIGH);
+        Serial.println("\nSun_Electric Off.....");
+      } else {
+        digitalWrite(relay3_pin, LOW);
+        Serial.println("\nSun_Electric Else.....");
+      }
   } else {
-    digitalWrite(relay1_pin, LOW);
-    Serial.println("Pump Off.....");
+    //relay channel 2
+    digitalWrite(relay2_pin, HIGH);
+    Serial.println("LED Off.....");
+    Serial.print("\nCheck Temp Now = ");
+    Serial.print(temp);
+    //relay channel 3
+      if (temp > 18.00) {
+        digitalWrite(relay3_pin, LOW);
+        Serial.println("\nMoon_Electric On.....");
+      } else if (temp <= 13.00) {
+        digitalWrite(relay3_pin, HIGH);
+        Serial.println("\nMoon_Electric Off.....");
+      } else {
+        digitalWrite(relay3_pin, LOW);
+        Serial.println("\nMoon_Electric Else.....");
+      }
   }
 
+  //relay channel 1
+  if (avgShthum < 80.00) {
+    Serial.print("\nCheck avgShthum Now = ");
+    Serial.print(avgShthum);
+    digitalWrite(relay1_pin, LOW);
+    Serial.println("\nPump On.....");
+  } else {
+    Serial.print("\nCheck avgShthum Now = ");
+    Serial.print(avgShthum);
+    digitalWrite(relay1_pin, HIGH);
+    Serial.println("\nPump Off.....");
+  }
+  // delay(10000);
 }
 
 void sendThing(float DH, float DT, float SH, float ST){
@@ -193,15 +234,17 @@ void sendThing(float DH, float DT, float SH, float ST){
   ThingSpeak.setField(3, SH);
   ThingSpeak.setField(4, ST);
 
-  delay(15000);
+  delay(1000);
   ThingSpeak.setStatus(myStatus);
 
   int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
   if(x == 200){
     Serial.println("Channel update successful.");
+    Serial.println("\n=============================================");
   }
   else{
     Serial.println("Problem updating channel. HTTP error code " + String(x));
+    Serial.println("\n=============================================");
   }
 }
 
